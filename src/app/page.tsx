@@ -12,7 +12,6 @@ import {
   PrincessQuestion,
 } from '@/data/teenieping';
 import { isSimilarEnough } from '@/lib/similarity';
-import { shareKakao } from '@/lib/kakao';
 
 type GamePhase = 'select' | 'playing' | 'result';
 
@@ -411,12 +410,6 @@ export default function Home() {
             className="w-full py-3 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-2xl font-bold transition-colors"
           >
             🔗 친구에게 공유하기
-          </button>
-          <button
-            onClick={() => shareKakao(score, total, DIFFICULTY_LABELS[difficulty])}
-            className="w-full py-3 bg-yellow-400 hover:bg-yellow-500 text-gray-900 rounded-2xl font-bold transition-colors md:hidden"
-          >
-            💬 카카오톡으로 공유
           </button>
         </div>
       </div>
