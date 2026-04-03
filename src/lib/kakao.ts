@@ -1,24 +1,61 @@
-export async function shareKakao(score: number, total: number, difficulty: string) {
+declare global {
+  interface Window {
+    Kakao: {
+      isInitialized: () => boolean;
+      init: (key: string | undefined) => void;
+      Share: {
+        sendDefault: (options: KakaoShareOptions) => void;
+      };
+    };
+  }
+}
+
+interface KakaoShareOptions {
+  objectType: string;
+  content: {
+    title: string;
+    description: string;
+    imageUrl: string;
+    link: { mobileWebUrl: string; webUrl: string };
+  };
+  buttons: Array<{
+    title: string;
+    link: { mobileWebUrl: string; webUrl: string };
+  }>;
+  fail?: (err: unknown) => void;
+}
+
+export function shareKakao(score: number, total: number, difficulty: string) {
   const pct = Math.round((score / total) * 100);
   const url = window.location.origin;
-  const text = `매치 티니핑 ${difficulty} 모드\n${total}문제 중 ${score}개 정답 (${pct}%) 🌟\n나도 도전해봐!`;
+  const imageUrl = `${url}/api/og?score=${score}&total=${total}&difficulty=${encodeURIComponent(difficulty)}`;
 
-  // 1순위: Web Share API (모바일 전체 앱 공유 시트)
-  if (navigator.share) {
-    try {
-      await navigator.share({ title: '매치 티니핑!', text, url });
-      return;
-    } catch {
-      // 사용자가 공유 취소 시 아무 것도 하지 않음
-      return;
-    }
+  if (!window.Kakao) {
+    alert('카카오 SDK가 로드되지 않았습니다. 잠시 후 다시 시도해주세요.');
+    return;
   }
 
-  // 2순위 (PC 등 Web Share 미지원): 클립보드 복사
-  try {
-    await navigator.clipboard.writeText(`${text}\n${url}`);
-    alert('주소가 복사되었습니다! 카카오톡에 붙여넣기 해보세요 🎉');
-  } catch {
-    alert(`공유 텍스트:\n${text}\n${url}`);
+  if (!window.Kakao.isInitialized()) {
+    window.Kakao.init(process.env.NEXT_PUBLIC_KAKAO_JS_KEY);
   }
+
+  window.Kakao.Share.sendDefault({
+    objectType: 'feed',
+    content: {
+      title: `매치 티니핑! — ${pct}% 달성 🌟`,
+      description: `${difficulty} 모드에서 ${total}문제 중 ${score}개 맞혔어요! 너도 도전해봐~`,
+      imageUrl,
+      link: { mobileWebUrl: url, webUrl: url },
+    },
+    buttons: [
+      {
+        title: '나도 도전하기',
+        link: { mobileWebUrl: url, webUrl: url },
+      },
+    ],
+    fail: (err) => {
+      console.error('[Kakao Share 오류]', err);
+      alert(`공유 오류가 발생했습니다.\n에러 내용: ${JSON.stringify(err)}`);
+    },
+  });
 }
