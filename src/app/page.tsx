@@ -21,6 +21,7 @@ type Question = {
   answer: string;
   aliases: string[];
   displayName: string;
+  choices: string[]; // 다지선다 보기 (극악은 빈 배열)
 };
 
 function shuffle<T>(arr: T[]): T[] {
@@ -32,8 +33,31 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
+// 난이도별 보기 수
+const CHOICE_COUNT: Record<Difficulty, number> = {
+  easy: 2,
+  medium: 3,
+  hard: 5,
+  extreme: 0,
+};
+
+// 오답 보기 뽑기용 전체 풀
+const allTeeniepings: Teenieping[] = [
+  ...easyTeeniepings,
+  ...hardTeeniepings, // medium은 easy를 포함하므로 중복 방지
+];
+
+function buildChoices(answer: string, count: number): string[] {
+  const wrongs = shuffle(
+    allTeeniepings.map((t) => t.name).filter((n) => n !== answer)
+  ).slice(0, count - 1);
+  return shuffle([answer, ...wrongs]);
+}
+
 function buildQuestions(difficulty: Difficulty): Question[] {
   const count = STAGE_COUNTS[difficulty];
+  const choiceCount = CHOICE_COUNT[difficulty];
+
   if (difficulty === 'extreme') {
     return shuffle(extremeQuestions)
       .slice(0, count)
@@ -42,14 +66,17 @@ function buildQuestions(difficulty: Difficulty): Question[] {
         answer: q.answer,
         aliases: q.aliases,
         displayName: q.princess,
+        choices: [],
       }));
   }
+
   const pool: Teenieping[] =
     difficulty === 'easy'
       ? easyTeeniepings
       : difficulty === 'medium'
       ? mediumTeeniepings
       : hardTeeniepings;
+
   return shuffle(pool)
     .slice(0, count)
     .map((t: Teenieping) => ({
@@ -57,6 +84,7 @@ function buildQuestions(difficulty: Difficulty): Question[] {
       answer: t.name,
       aliases: [],
       displayName: t.name,
+      choices: buildChoices(t.name, choiceCount),
     }));
 }
 
@@ -68,10 +96,10 @@ const DIFFICULTY_LABELS: Record<Difficulty, string> = {
 };
 
 const DIFFICULTY_DESC: Record<Difficulty, string> = {
-  easy: '가장 유명한 로열 티니핑 5마리',
-  medium: '로열 티니핑 10마리',
-  hard: '잘 안 알려진 일반 티니핑 15마리',
-  extreme: '로미 프린세스를 보고 합체한 티니핑 맞추기',
+  easy: '2지선다 · 5문제',
+  medium: '3지선다 · 10문제',
+  hard: '5지선다 · 15문제',
+  extreme: '타이핑 · 15문제 (로미 프린세스)',
 };
 
 const DIFFICULTY_COLORS: Record<Difficulty, string> = {
@@ -96,6 +124,7 @@ export default function Home() {
   const [input, setInput] = useState('');
   const [results, setResults] = useState<boolean[]>([]);
   const [showAnswer, setShowAnswer] = useState(false);
+  const [selectedChoice, setSelectedChoice] = useState<string | null>(null);
 
   const startGame = useCallback((diff: Difficulty) => {
     setDifficulty(diff);
@@ -105,30 +134,39 @@ export default function Home() {
     setInput('');
     setResults([]);
     setShowAnswer(false);
+    setSelectedChoice(null);
     setPhase('playing');
   }, []);
 
-  const submitAnswer = useCallback(() => {
-    if (!input.trim() || showAnswer) return;
-    const q = questions[current];
-    const correct = isSimilarEnough(input, q.answer, q.aliases);
-    const newResults = [...results, correct];
-    setResults(newResults);
-    setShowAnswer(true);
+  const handleAnswer = useCallback(
+    (answer: string) => {
+      if (showAnswer) return;
+      const q = questions[current];
+      const correct =
+        difficulty === 'extreme'
+          ? isSimilarEnough(answer, q.answer, q.aliases)
+          : answer === q.answer;
+      const newResults = [...results, correct];
+      setResults(newResults);
+      setSelectedChoice(answer);
+      setShowAnswer(true);
 
-    setTimeout(() => {
-      if (current + 1 >= questions.length) {
-        setPhase('result');
-      } else {
-        setCurrent(current + 1);
-        setInput('');
-        setShowAnswer(false);
-      }
-    }, 1500);
-  }, [input, questions, current, results, showAnswer]);
+      setTimeout(() => {
+        if (current + 1 >= questions.length) {
+          setPhase('result');
+        } else {
+          setCurrent(current + 1);
+          setInput('');
+          setShowAnswer(false);
+          setSelectedChoice(null);
+        }
+      }, 1200);
+    },
+    [questions, current, results, showAnswer, difficulty]
+  );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') submitAnswer();
+    if (e.key === 'Enter') handleAnswer(input);
   };
 
   const copyUrl = () => {
@@ -137,6 +175,7 @@ export default function Home() {
     });
   };
 
+  // ── 난이도 선택 ──────────────────────────────────────
   if (phase === 'select') {
     return (
       <main className="min-h-screen bg-gradient-to-b from-pink-100 to-purple-100 flex flex-col items-center justify-center p-4">
@@ -146,7 +185,6 @@ export default function Home() {
             <h1 className="text-4xl font-black text-pink-600 mb-2">매치 티니핑!</h1>
             <p className="text-gray-500">티니핑 이미지를 보고 이름을 맞춰보세요</p>
           </div>
-
           <div className="space-y-3">
             {(['easy', 'medium', 'hard', 'extreme'] as Difficulty[]).map((diff) => (
               <button
@@ -171,6 +209,7 @@ export default function Home() {
     );
   }
 
+  // ── 게임 진행 ──────────────────────────────────────
   if (phase === 'playing') {
     const q = questions[current];
     const isExtreme = difficulty === 'extreme';
@@ -204,56 +243,100 @@ export default function Home() {
           </div>
 
           {/* 이미지 카드 */}
-          <div className="bg-white rounded-3xl shadow-md p-5 mb-5">
+          <div className="bg-white rounded-3xl shadow-md p-5 mb-4">
             {isExtreme && (
               <p className="text-center text-xs text-gray-400 mb-2">
                 {q.displayName} — 합체한 티니핑은?
               </p>
             )}
-            <div className="relative w-full flex justify-center">
+            <div className="w-full flex justify-center">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={q.image}
                 alt={isExtreme ? '로미 프린세스' : '티니핑'}
-                className="max-w-[240px] max-h-[240px] w-full h-auto object-contain rounded-2xl"
+                className="max-w-[220px] max-h-[220px] w-full h-auto object-contain rounded-2xl"
               />
             </div>
           </div>
 
-          {/* 입력 */}
-          <div className="space-y-3">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={isExtreme ? '합체한 티니핑 이름을 입력하세요' : '티니핑 이름을 입력하세요'}
-              disabled={showAnswer}
-              className="w-full px-4 py-3 rounded-2xl border-2 border-pink-300 focus:border-pink-500 focus:outline-none text-center text-lg bg-white disabled:bg-gray-50 disabled:text-gray-400"
-              autoFocus
-            />
+          {/* 다지선다 보기 */}
+          {!isExtreme && (
+            <div
+              className={`grid gap-2 mb-4 ${
+                q.choices.length === 2
+                  ? 'grid-cols-2'
+                  : q.choices.length === 3
+                  ? 'grid-cols-3'
+                  : 'grid-cols-2 sm:grid-cols-3'
+              }`}
+            >
+              {q.choices.map((choice) => {
+                const isSelected = selectedChoice === choice;
+                const isCorrect = choice === q.answer;
+                let btnClass =
+                  'py-3 px-2 rounded-2xl font-bold text-base transition-all active:scale-95 border-2 ';
 
-            {showAnswer ? (
-              <div
-                className={`text-center py-3 rounded-2xl font-bold text-lg ${
-                  lastResult ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                }`}
-              >
-                {lastResult ? `정답! 🎉 ${q.answer}` : `오답 😢 정답: ${q.answer}`}
-              </div>
-            ) : (
-              <button
-                onClick={submitAnswer}
-                disabled={!input.trim()}
-                className="w-full py-3 bg-pink-500 hover:bg-pink-600 active:bg-pink-700 disabled:bg-pink-200 text-white rounded-2xl font-bold text-lg transition-colors"
-              >
-                확인
-              </button>
-            )}
-          </div>
+                if (!showAnswer) {
+                  btnClass += 'bg-white border-pink-200 hover:border-pink-400 hover:bg-pink-50 text-gray-800';
+                } else if (isCorrect) {
+                  btnClass += 'bg-green-100 border-green-500 text-green-800';
+                } else if (isSelected && !isCorrect) {
+                  btnClass += 'bg-red-100 border-red-400 text-red-700';
+                } else {
+                  btnClass += 'bg-gray-50 border-gray-200 text-gray-400';
+                }
+
+                return (
+                  <button
+                    key={choice}
+                    onClick={() => handleAnswer(choice)}
+                    disabled={showAnswer}
+                    className={btnClass}
+                  >
+                    {showAnswer && isCorrect && '✅ '}
+                    {showAnswer && isSelected && !isCorrect && '❌ '}
+                    {choice}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* 극악 타이핑 입력 */}
+          {isExtreme && (
+            <div className="space-y-3 mb-4">
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="합체한 티니핑 이름을 입력하세요"
+                disabled={showAnswer}
+                className="w-full px-4 py-3 rounded-2xl border-2 border-pink-300 focus:border-pink-500 focus:outline-none text-center text-lg bg-white disabled:bg-gray-50 disabled:text-gray-400"
+                autoFocus
+              />
+              {showAnswer ? (
+                <div
+                  className={`text-center py-3 rounded-2xl font-bold text-lg ${
+                    lastResult ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                  }`}
+                >
+                  {lastResult ? `정답! 🎉 ${q.answer}` : `오답 😢 정답: ${q.answer}`}
+                </div>
+              ) : (
+                <button
+                  onClick={() => handleAnswer(input)}
+                  disabled={!input.trim()}
+                  className="w-full py-3 bg-pink-500 hover:bg-pink-600 active:bg-pink-700 disabled:bg-pink-200 text-white rounded-2xl font-bold text-lg transition-colors"
+                >
+                  확인
+                </button>
+              )}
+            </div>
+          )}
 
           {/* 결과 점 */}
-          <div className="flex gap-1 mt-4 flex-wrap justify-center">
+          <div className="flex gap-1 flex-wrap justify-center">
             {results.map((r, i) => (
               <span key={i} className="text-base">
                 {r ? '🟢' : '🔴'}
@@ -265,7 +348,7 @@ export default function Home() {
     );
   }
 
-  // 결과 화면
+  // ── 결과 화면 ──────────────────────────────────────
   const score = results.filter(Boolean).length;
   const total = results.length;
   const pct = Math.round((score / total) * 100);
@@ -286,10 +369,6 @@ export default function Home() {
     return '티니핑을 더 공부해봐요!';
   };
 
-  const handleKakaoShare = () => {
-    shareKakao(score, total, DIFFICULTY_LABELS[difficulty]);
-  };
-
   return (
     <main className="min-h-screen bg-gradient-to-b from-pink-100 to-purple-100 flex flex-col items-center justify-center p-4">
       <div className="max-w-sm w-full bg-white rounded-3xl shadow-lg p-8 text-center">
@@ -300,8 +379,7 @@ export default function Home() {
           <span className="text-2xl font-bold text-gray-400">%</span>
         </div>
         <p className="text-gray-500 mb-1">
-          {total}문제 중{' '}
-          <span className="font-bold text-pink-600">{score}개</span> 정답
+          {total}문제 중 <span className="font-bold text-pink-600">{score}개</span> 정답
         </p>
         <p className="text-sm text-gray-400 mb-5">
           {DIFFICULTY_EMOJI[difficulty]} {DIFFICULTY_LABELS[difficulty]} 모드
@@ -334,9 +412,8 @@ export default function Home() {
           >
             🔗 친구에게 공유하기
           </button>
-          {/* 카카오톡 공유 - 모바일 전용 */}
           <button
-            onClick={handleKakaoShare}
+            onClick={() => shareKakao(score, total, DIFFICULTY_LABELS[difficulty])}
             className="w-full py-3 bg-yellow-400 hover:bg-yellow-500 text-gray-900 rounded-2xl font-bold transition-colors md:hidden"
           >
             💬 카카오톡으로 공유
