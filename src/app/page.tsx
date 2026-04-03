@@ -12,6 +12,7 @@ import {
   PrincessQuestion,
 } from '@/data/teenieping';
 import { isSimilarEnough } from '@/lib/similarity';
+import { shareKakao } from '@/lib/kakao';
 
 type GamePhase = 'select' | 'playing' | 'result';
 
@@ -131,7 +132,7 @@ export default function Home() {
   };
 
   const copyUrl = () => {
-    navigator.clipboard.writeText(window.location.href).then(() => {
+    navigator.clipboard.writeText(window.location.origin).then(() => {
       alert('게임 주소가 복사되었습니다! 친구들에게 공유해보세요 🎉');
     });
   };
@@ -285,7 +286,9 @@ export default function Home() {
     return '티니핑을 더 공부해봐요!';
   };
 
-  const shareText = `매치 티니핑 ${DIFFICULTY_LABELS[difficulty]} 모드\n${score}/${total}문제 (${pct}%) ${getResultEmoji()}\n\n나도 도전해보세요!`;
+  const handleKakaoShare = () => {
+    shareKakao(score, total, DIFFICULTY_LABELS[difficulty]);
+  };
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-pink-100 to-purple-100 flex flex-col items-center justify-center p-4">
@@ -333,10 +336,7 @@ export default function Home() {
           </button>
           {/* 카카오톡 공유 - 모바일 전용 */}
           <button
-            onClick={() => {
-              const url = `https://sharer.kakao.com/talk/friends/picker/link?app_key=YOUR_APP_KEY&text=${encodeURIComponent(shareText)}`;
-              window.open(url, '_blank');
-            }}
+            onClick={handleKakaoShare}
             className="w-full py-3 bg-yellow-400 hover:bg-yellow-500 text-gray-900 rounded-2xl font-bold transition-colors md:hidden"
           >
             💬 카카오톡으로 공유
